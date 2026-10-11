@@ -2629,10 +2629,16 @@ var rotStart=null;        // {sx, ang0, rot0} for rotate drags
 var moved=false;
 
 function evPos(e){ var r=canvas.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+/* Normalize pointer id for mouse-event fallback: MouseEvent has no pointerId,
+   so mouse input uses a constant key. Works in the pointers Map for pan/drag. */
+function pidOf(e){ return (e.pointerId===undefined||e.pointerId===null) ? 'mouse' : e.pointerId; }
 
 function onPointerDown(e){
-  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
-  var p=evPos(e); pointers.set(e.pointerId,p); moved=false;
+  /* setPointerCapture needs a real pointerId; skip for mouse-event fallback */
+  if(canvas.setPointerCapture && e.pointerId!==undefined && e.pointerId!==null){
+    try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+  }
+  var p=evPos(e); pointers.set(pidOf(e),p); moved=false;
   if(pointers.size===2){ // begin pinch
     var a=[...pointers.values()];
     pinchStart={ d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),
@@ -2704,9 +2710,9 @@ function onPointerDown(e){
   markDirty();
 }
 function onPointerMove(e){
-  if(!pointers.has(e.pointerId)) return;
-  var p=evPos(e), prev=pointers.get(e.pointerId);
-  pointers.set(e.pointerId,p);
+  if(!pointers.has(pidOf(e))) return;
+  var p=evPos(e), prev=pointers.get(pidOf(e));
+  pointers.set(pidOf(e),p);
   if(Math.hypot(p.x-prev.x,p.y-prev.y)>3) moved=true;
   var w=s2w(p.x,p.y); hoverPos=w;
   updatePosReadout(w);
@@ -2779,7 +2785,7 @@ function onPointerMove(e){
   if(tool==='zone'&&zoneDraft.length) markDirty(); // rubber band
 }
 function onPointerUp(e){
-  pointers.delete(e.pointerId);
+  pointers.delete(pidOf(e));
   if(pointers.size<2) pinchStart=null;
   if(pointers.size>0) return; // still touching with another finger
   var p=evPos(e), w=s2w(p.x,p.y);
@@ -3136,6 +3142,14 @@ function init(){
   canvas.addEventListener('pointermove',onPointerMove);
   canvas.addEventListener('pointerup',onPointerUp);
   canvas.addEventListener('pointercancel',onPointerUp);
+  /* Mouse fallbacks for WebKitGTK builds without Pointer Events support.
+     Feature-detected: only installed when PointerEvent is missing, so modern
+     browsers never double-handle (pointer + mouse firing for one press). */
+  if(typeof window!=='undefined' && !window.PointerEvent){
+    canvas.addEventListener('mousedown',onPointerDown);
+    canvas.addEventListener('mousemove',onPointerMove);
+    canvas.addEventListener('mouseup',onPointerUp);
+  }
   canvas.addEventListener('dblclick',onDoubleClick);
   canvas.addEventListener('wheel',onWheel,{passive:false});
   canvas.addEventListener('mousewheel',onWheel,{passive:false}); // fallback event name for older WebKitGTK shells
