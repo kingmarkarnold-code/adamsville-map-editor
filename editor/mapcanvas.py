@@ -139,6 +139,41 @@ MEDIAN_WIDTH = 8.0
 DIVIDER_WIDTH = 4.0
 
 
+# Zoom thresholds for street name labels (Joshua 2026-10-12: Google
+# Maps-style zoom-dependent labels). The canvas zoom is a scale factor
+# (screen pixels per world unit): higher = more zoomed in.
+#   zoom < LABEL_ZOOM_HIGHWAY  → interstate names only
+#   zoom < LABEL_ZOOM_ARTERY   → interstate + highway names
+#   zoom < LABEL_ZOOM_LOCAL    → + major/minor artery names
+#   zoom >= LABEL_ZOOM_LOCAL   → all categories incl. local streets
+LABEL_ZOOM_HIGHWAY = 0.06
+LABEL_ZOOM_ARTERY = 0.15
+LABEL_ZOOM_LOCAL = 0.4
+# Minimum on-screen road length (pixels) before its name label is drawn.
+# Skips tiny stubs so the map doesn't get cluttered at high zoom.
+LABEL_MIN_SCREEN_LEN = 80.0
+# Font size for street name labels (screen pixels).
+LABEL_FONT_SIZE = 11
+
+
+def _label_categories_for_zoom(zoom):
+    """
+    Return the set of road categories whose names should be labeled
+    at the given zoom level (Google Maps-style progressive disclosure).
+    Joshua 2026-10-12: zoomed out shows only interstates; zooming in
+    progressively adds highways, arteries, then local streets.
+    """
+    cats = {"interstate"}
+    if zoom >= LABEL_ZOOM_HIGHWAY:
+        cats.add("highway")
+    if zoom >= LABEL_ZOOM_ARTERY:
+        cats.add("major_artery")
+        cats.add("minor_artery")
+    if zoom >= LABEL_ZOOM_LOCAL:
+        cats.add("local")
+    return cats
+
+
 def _direction_labels(pts):
     """
     Auto-computed direction labels for a divided road, from its overall
@@ -347,6 +382,10 @@ class MapCanvas(Gtk.DrawingArea):
 
         # Draw roads (only visible ones, via spatial index)
         self._draw_roads(cr, vx0, vz0, vx1, vz1)
+
+        # Draw street name labels on top of roads, filtered by zoom
+        # level (Joshua 2026-10-12: Google Maps-style labels).
+        self._draw_road_labels(cr, vx0, vz0, vx1, vz1)
 
         # Draw selection highlight
         self._draw_selection(cr)
@@ -674,6 +713,56 @@ class MapCanvas(Gtk.DrawingArea):
                 # Appearance). Thin concrete strips on the selected side(s).
                 if road.get("sidewalk_left") or road.get("sidewalk_right"):
                     self._draw_sidewalks(cr, pts, road, lw)
+
+    def _draw_road_labels(self, cr, vx0, vz0, vx1, vz1):
+        """
+        Draw street name labels, filtered by zoom level (Google Maps
+        style). Zoomed out shows only interstate names; zooming in
+        progressively adds highways, arteries, then local streets.
+        One label per road at its midpoint. Joshua 2026-10-12.
+        """
+        if not self.app.spatial_index:
+            return
+        # Which categories get labels at this zoom?
+        label_cats = _label_categories_for_zoom(self.zoom)
+        # Candidate roads from the spatial index (viewport-culled).
+        indices = self.app.spatial_index.query(vx0, vz0, vx1, vz1)
+        cr.select_font_face("Sans", 0, 0)  # normal weight
+        cr.set_font_size(LABEL_FONT_SIZE)
+        seen_names = set()  # one label per unique road name on screen
+        for idx in indices:
+            cat, road, _, _, _, _ = self.app.spatial_index.roads[idx]
+            if normalize_category(cat) not in label_cats:
+                continue
+            name = road.get("name") or "Unnamed"
+            if name in seen_names:
+                continue  # already labeled this road on screen
+            pts = road.get("pts", [])
+            if len(pts) < 2:
+                continue
+            # Convert to screen coords and measure on-screen length.
+            spts = [self.world_to_screen(px, pz) for px, pz in pts]
+            screen_len = sum(
+                math.hypot(spts[i + 1][0] - spts[i][0],
+                           spts[i + 1][1] - spts[i][1])
+                for i in range(len(spts) - 1))
+            if screen_len < LABEL_MIN_SCREEN_LEN:
+                continue  # too short on screen — skip to avoid clutter
+            # Label at the road midpoint.
+            mid = spts[len(spts) // 2]
+            seen_names.add(name)
+            # Dark outline (drawn first, slightly offset in 4 directions)
+            # then white text on top, for readability over any road color.
+            ext = cr.text_extents(name)
+            tx = mid[0] - ext.width / 2
+            ty = mid[1] + ext.height / 2
+            cr.set_source_rgb(0.05, 0.05, 0.08)
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                cr.move_to(tx + dx, ty + dy)
+                cr.show_text(name)
+            cr.set_source_rgb(1.0, 1.0, 1.0)
+            cr.move_to(tx, ty)
+            cr.show_text(name)
 
     def _draw_paint(self, cr, pts, paint, road_lw):
         """
