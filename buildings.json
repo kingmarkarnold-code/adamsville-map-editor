@@ -1,0 +1,154 @@
+[
+  {
+    "name": "Suburban House",
+    "type": "House",
+    "wall_material": "Vinyl Siding",
+    "wall_color": "#d4c5a0",
+    "roof_color": "#5a3a2a",
+    "roof_texture": "Shingle",
+    "floors": 1,
+    "walkable": false,
+    "floor_plan": "",
+    "position": [
+      3000,
+      2000
+    ],
+    "rotation": 0.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.25,
+        "y": 0.55,
+        "w": 0.15,
+        "h": 0.25,
+        "type": "Standard"
+      },
+      {
+        "face": "front",
+        "x": 0.6,
+        "y": 0.55,
+        "w": 0.15,
+        "h": 0.25,
+        "type": "Standard"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.45,
+        "y": 0.0,
+        "type": "Wood Door"
+      }
+    ]
+  },
+  {
+    "name": "Downtown Store",
+    "type": "Store",
+    "wall_material": "Brick",
+    "wall_color": "#a0522d",
+    "roof_color": "#3a3a3a",
+    "roof_texture": "Flat",
+    "floors": 2,
+    "walkable": true,
+    "floor_plan": "Store",
+    "position": [
+      6000,
+      1500
+    ],
+    "rotation": 0.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.15,
+        "y": 0.5,
+        "w": 0.25,
+        "h": 0.35,
+        "type": "Large"
+      },
+      {
+        "face": "front",
+        "x": 0.6,
+        "y": 0.5,
+        "w": 0.25,
+        "h": 0.35,
+        "type": "Large"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.45,
+        "y": 0.0,
+        "type": "Glass Door"
+      }
+    ]
+  },
+  {
+    "name": "Corner Restaurant",
+    "type": "Restaurant",
+    "wall_material": "Stucco",
+    "wall_color": "#e8dcc0",
+    "roof_color": "#7a2a1a",
+    "roof_texture": "Tile",
+    "floors": 1,
+    "walkable": true,
+    "floor_plan": "Restaurant",
+    "position": [
+      6500,
+      2500
+    ],
+    "rotation": 90.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.2,
+        "y": 0.55,
+        "w": 0.2,
+        "h": 0.3,
+        "type": "Bay Window"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.55,
+        "y": 0.0,
+        "type": "Double Door"
+      }
+    ]
+  },
+  {
+    "name": "Ranch House",
+    "type": "House",
+    "wall_material": "Wood Siding",
+    "wall_color": "#8b7355",
+    "roof_color": "#4a4a4a",
+    "roof_texture": "Shingle",
+    "floors": 1,
+    "walkable": false,
+    "floor_plan": "",
+    "position": [
+      2500,
+      3000
+    ],
+    "rotation": 180.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.3,
+        "y": 0.55,
+        "w": 0.15,
+        "h": 0.25,
+        "type": "Standard"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.5,
+        "y": 0.0,
+        "type": "Wood Door"
+      }
+    ]
+  }
+]
