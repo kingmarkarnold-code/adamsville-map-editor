@@ -1,6 +1,6 @@
 {
-  "version": "1.8.1",
-  "changelog": "Help -> Check for Updates: update the app in place without reinstalling the .deb. Merge fix: merge now snaps the endpoint to the nearest point on the target road's edge instead of stretching across the map.",
+  "version": "1.8.2",
+  "changelog": "Crash fix: editor now opens even if updater.py is missing/broken (soft import); startup crashes are logged to ~/.cache/adamsville-map-editor-native/crash.log for diagnosis.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/editor/app.py",
-      "sha256": "e1703fa66db56f387ffcef11bf52e8160f0a9ce87a436af3c51f453f48f981d5"
+      "sha256": "a68a3646f8e6b348371863e55bba6fb91be8ae202dede7f36ca36fa6d4b1d225"
     },
     {
       "path": "data.py",
@@ -26,11 +26,6 @@
       "path": "mapcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/editor/mapcanvas.py",
       "sha256": "a80d3d12ca98b55908d832a4ac170bbb5af2eea7bed288054b0b7031adbaa535"
-    },
-    {
-      "path": "mollie-icon.png",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/editor/mollie-icon.png",
-      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
     },
     {
       "path": "overpass.py",
