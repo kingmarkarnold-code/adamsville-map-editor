@@ -1,6 +1,6 @@
 {
-  "version": "1.8.3",
-  "changelog": "Zoom-dependent street name labels (Google Maps-style)",
+  "version": "1.8.4",
+  "changelog": "Move Road (Edit menu): pick up an entire road and relocate it with ghost preview; click/Enter to drop, Esc to cancel. Auto-pan on empty-terrain drag (Google Maps feel).",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/editor/app.py",
-      "sha256": "a68a3646f8e6b348371863e55bba6fb91be8ae202dede7f36ca36fa6d4b1d225"
+      "sha256": "b8d32eb75ecbf31c65a1c120f1ef83839b56e5f9bb6bbad945818ca4f379497b"
     },
     {
       "path": "data.py",
@@ -25,7 +25,7 @@
     {
       "path": "mapcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/editor/mapcanvas.py",
-      "sha256": "a80d3d12ca98b55908d832a4ac170bbb5af2eea7bed288054b0b7031adbaa535"
+      "sha256": "c4392b25c9f741d19d2f79a69737a6f2e172cd011095e49254a2681b5f86c294"
     },
     {
       "path": "overpass.py",
