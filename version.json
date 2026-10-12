@@ -1,6 +1,6 @@
 {
-  "version": "1.8.2",
-  "changelog": "Crash fix: editor now opens even if updater.py is missing/broken (soft import); startup crashes are logged to ~/.cache/adamsville-map-editor-native/crash.log for diagnosis.",
+  "version": "1.8.3",
+  "changelog": "Zoom-dependent street name labels (Google Maps-style)",
   "files": [
     {
       "path": "about.py",
