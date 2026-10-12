@@ -17,7 +17,16 @@ import threading
 
 import github_sync  # noqa: E402 -- suite auto-push + close warning
 from about import show_about_dialog
-import updater  # noqa: E402 -- Help -> Check for Updates (in-place updater)
+# v1.8.2 (Joshua 2026-10-12): soft import for updater — if updater.py is
+# missing or broken (partial install, failed in-place update), the editor
+# must still open. The Help -> Check for Updates item is only added when
+# the import succeeds.
+try:
+    import updater  # noqa: E402 -- Help -> Check for Updates (in-place updater)
+    _UPDATER_AVAILABLE = True
+except Exception:
+    updater = None
+    _UPDATER_AVAILABLE = False
 from undo import UndoManager, UndoCommand  # noqa: E402 -- undo/redo stacks
 from data import (
     ensure_data_dir, needs_download, download_roads, load_roads,
@@ -37,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.8.2"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -370,9 +379,12 @@ class MapEditorApp:
         tools_item.connect("activate", self.show_help)
         help_menu.append(tools_item)
 
-        update_item = Gtk.MenuItem(label="Check for Updates")
-        update_item.connect("activate", self.on_check_app_updates)
-        help_menu.append(update_item)
+        # v1.8.2: only offer in-place updates when updater.py imported OK.
+        # (A missing/broken updater must never stop the editor opening.)
+        if _UPDATER_AVAILABLE:
+            update_item = Gtk.MenuItem(label="Check for Updates")
+            update_item.connect("activate", self.on_check_app_updates)
+            help_menu.append(update_item)
 
         about_item = Gtk.MenuItem(label="About")
         about_item.connect("activate", self.show_about)
@@ -2417,6 +2429,10 @@ class MapEditorApp:
         # existing View-menu on_check_updates, which checks road-data.)
         # (Joshua 2026-10-12: update the installed app in
         # place instead of reinstalling the .deb.)
+        # v1.8.2: guard — this handler is only wired when the updater
+        # imported successfully, but never trust the menu state.
+        if not _UPDATER_AVAILABLE or updater is None:
+            return
         updater.check_for_updates_gui(
             self.window, APP_NAME, APP_VERSION,
             UPDATE_SLUG, UPDATE_MANIFEST_URL)
@@ -2440,9 +2456,26 @@ class MapEditorApp:
 
 def main():
     """Application entry point."""
-    ensure_data_dir()
-    app = MapEditorApp()
-    Gtk.main()
+    # v1.8.2 (Joshua 2026-10-12): crash logger. If the editor fails to
+    # start on Joshua's machine, the traceback is written to
+    # ~/.cache/adamsville-map-editor-native/crash.log so the real cause
+    # can be diagnosed instead of failing silently.
+    try:
+        ensure_data_dir()
+        app = MapEditorApp()
+        Gtk.main()
+    except Exception:
+        try:
+            import traceback
+            from pathlib import Path
+            log_dir = Path.home() / ".cache" / "adamsville-map-editor-native"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_dir / "crash.log", "w") as f:
+                f.write("Adamsville Map Editor %s crash log\n" % APP_VERSION)
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":
