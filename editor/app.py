@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.8.3"
+APP_VERSION = "1.8.4"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -237,7 +237,19 @@ class MapEditorApp:
         Escape: clear Join/Merge/Extend in-progress selections.
         Ctrl+Z: undo. Ctrl+Y or Ctrl+Shift+Z: redo.
         (Joshua 2026-10-12: undo/redo keyboard shortcuts.)
+        Move-road mode (Joshua 2026-10-12): Enter drops the road,
+        Escape cancels the move.
         """
+        # Move-road mode is modal: Enter commits the drop, Escape
+        # cancels. Handled before anything else.
+        if getattr(self.canvas, "move_road", None) is not None:
+            if event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+                snap = not (event.state & Gdk.ModifierType.SHIFT_MASK)
+                self.canvas.commit_move_road(snap=snap)
+                return True
+            if event.keyval == Gdk.KEY_Escape:
+                self.canvas.cancel_move_road()
+                return True
         if event.keyval == Gdk.KEY_Escape:
             self.canvas.clear_tool_state()
             self.set_status("Selection cleared.")
@@ -342,6 +354,16 @@ class MapEditorApp:
         self.divide_item.connect("activate", self.on_divide_section)
         self.divide_item.set_sensitive(False)  # no selection yet
         edit_menu.append(self.divide_item)
+
+        # Move Road (Joshua 2026-10-12): pick up an entire road and
+        # relocate it, preserving its shape. Enabled when exactly one
+        # road is selected.
+        self.move_road_item = Gtk.MenuItem(label="Move Road…")
+        self.move_road_item.set_tooltip_text(
+            "Pick up the selected road and move it to a new location")
+        self.move_road_item.connect("activate", self.on_move_road)
+        self.move_road_item.set_sensitive(False)  # no selection yet
+        edit_menu.append(self.move_road_item)
 
         menubar.append(edit_item)
 
@@ -960,6 +982,17 @@ class MapEditorApp:
     #    "paint": "none"|"dotted"|"dotted_yellow",
     #    "sidewalk_left": bool, "sidewalk_right": bool,
     #    "sidewalk_width": "narrow"|"standard"|"wide"}
+
+    def on_move_road(self, widget):
+        """
+        Edit → Move Road (Joshua 2026-10-12). Enters move-road mode for
+        the single selected road: the road sticks to the cursor with a
+        ghost preview. Click or Enter drops it, Escape cancels. One
+        undo step.
+        """
+        if not self.canvas.start_move_road():
+            # start_move_road already set a helpful status message.
+            return
 
     def on_road_appearance(self, widget):
         """
@@ -1694,6 +1727,11 @@ class MapEditorApp:
                     dividable = (normalize_category(sel[0][0])
                                  in DIVIDABLE_CATEGORIES)
             self.divide_item.set_sensitive(dividable)
+        except AttributeError:
+            pass  # menu not built yet during early init
+        # Edit → Move Road: exactly one selected road (Joshua 2026-10-12).
+        try:
+            self.move_road_item.set_sensitive(len(sel) == 1)
         except AttributeError:
             pass  # menu not built yet during early init
         # Keep the 3D inspector in sync with the selection.
