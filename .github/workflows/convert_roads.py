@@ -15,13 +15,18 @@ WHAT IT DOES:
   3. For each game zone (zones/<zone>/), assigns roads whose center falls
      inside the zone's bounds polygon.
   4. Writes zones/<zone>/roads.json as pure JSON:
-       {"highway":[...],"arterial":[...],"local":[...]}
+       {"interstate":[...],"highway":[...],"major_artery":[...],
+        "minor_artery":[...],"local":[...]}
      (plus zones/<zone>/roads.js as fallback — the game loads .js via
      <script> only if the JSON fetch fails)
-     Category mapping (game uses 3 categories):
-       interstate, highway  → "highway"
-       major_artery, minor_artery, arterial → "arterial"
-       local → "local"
+     Category mapping (game uses the 5-category schema — categories are
+     preserved as-is; only legacy "arterial" is remapped):
+       interstate   → "interstate"
+       highway      → "highway"
+       major_artery → "major_artery"
+       minor_artery → "minor_artery"
+       arterial     → "minor_artery"  (legacy — matches game's normRoadCat)
+       local        → "local"
      All editor-only fields (divided_sections, width_class, paint,
      sidewalk_*, cul_de_sac, etc.) are preserved on each road object —
      the game's road_sync.js reads them at runtime.
@@ -41,20 +46,25 @@ import sys
 
 # ---------------------------------------------------------------------------
 # Category mapping: editor categories → game categories.
-# The game's ROAD_DATA uses highway/arterial/local. New editor categories
-# (interstate, major_artery, minor_artery) fold into the nearest game bucket.
+# The game's ROAD_DATA uses the 5-category schema
+# (interstate/highway/major_artery/minor_artery/local). Categories pass
+# through unchanged; only legacy "arterial" is remapped to "minor_artery"
+# (exactly what the game's normRoadCat() does).
 # The original editor category is kept as "_editorCat" for road_sync.js.
 # ---------------------------------------------------------------------------
 CATEGORY_MAP = {
-    "interstate": "highway",
+    "interstate": "interstate",
     "highway": "highway",
-    "major_artery": "arterial",
-    "minor_artery": "arterial",
-    "arterial": "arterial",      # legacy
+    "major_artery": "major_artery",
+    "minor_artery": "minor_artery",
+    "arterial": "minor_artery",   # legacy — matches game's normRoadCat()
     "local": "local",
 }
 
-GAME_CATEGORIES = ("highway", "arterial", "local")
+# The game's ROAD_CATS (see detailed/index.html): the renderer reads
+# whatever keys exist in roads.json and normalizes legacy "arterial"
+# itself, so we preserve the full 5-category schema here.
+GAME_CATEGORIES = ("interstate", "highway", "major_artery", "minor_artery", "local")
 
 
 def point_in_polygon(px, pz, polygon):
@@ -168,7 +178,8 @@ def convert_road(road, editor_cat):
 def write_zone_roads(zone_dir, road_data):
     """
     Write zones/<zone>/roads.json as pure JSON:
-      {"highway":[...],"arterial":[...],"local":[...]}
+      {"interstate":[...],"highway":[...],"major_artery":[...],
+       "minor_artery":[...],"local":[...]}
 
     v1.54 (2026-10-12): iOS Safari froze at 18% parsing the 1.6M-char single
     lines in .js zone files — the game now fetches .json (JSON.parse is

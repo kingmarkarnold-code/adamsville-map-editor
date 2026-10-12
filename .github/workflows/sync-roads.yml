@@ -39,8 +39,9 @@ jobs:
       # -- Get the map-editor repo (this repo, the data source) --------------
       - name: Checkout map-editor repo
         uses: actions/checkout@v4
-        with:
-          path: map-editor
+        # (no `path:` — checks out to the workspace root, so this repo's
+        # own .github/workflows/ scripts are reachable at the repo-root
+        # relative path used below)
 
       # -- Get the game repo (the destination) --------------------------------
       - name: Checkout game repo
@@ -53,11 +54,11 @@ jobs:
       # -- Convert and bake ---------------------------------------------------
       - name: Convert roads.json to zone road files
         run: |
-          python3 map-editor/.github/workflows/convert_roads.py \
-            --roads map-editor/roads.json \
-            --zones map-editor/zones.json \
-            --game-dir game/play/detailed \
-            --manifest game/play/detailed/map-manifest.json
+          python3 .github/workflows/convert_roads.py \
+            --roads roads.json \
+            --zones zones.json \
+            --game-dir game/detailed \
+            --manifest game/detailed/map-manifest.json
 
       # -- Commit to the game repo --------------------------------------------
       - name: Commit baked road files to game repo
@@ -65,10 +66,10 @@ jobs:
           cd game
           git config user.name "Joshua Arnold"
           git config user.email "joshua.arnold@adamsville.game"
-          git add play/detailed/zones/*/roads.json
-          git add play/detailed/zones/*/roads.js
-          git add play/detailed/zones/*/zone.json
-          git add play/detailed/map-manifest.json
+          git add detailed/zones/*/roads.json
+          git add detailed/zones/*/roads.js
+          git add detailed/zones/*/zone.json
+          git add detailed/map-manifest.json
           # Only commit if something actually changed (idempotent)
           if git diff --cached --quiet; then
             echo "No road changes to bake — skipping commit."
@@ -76,7 +77,7 @@ jobs:
             # Bump map_version (format YYYY.MM.DD.N)
             python3 - << 'PYEOF'
           import json, datetime
-          mp = 'play/detailed/map-manifest.json'
+          mp = 'detailed/map-manifest.json'
           with open(mp) as f:
               m = json.load(f)
           today = datetime.date.today().strftime('%Y.%m.%d')
@@ -90,7 +91,7 @@ jobs:
               json.dump(m, f, indent=2)
           print(f"Bumped map_version to {m['map_version']}")
           PYEOF
-            git add play/detailed/map-manifest.json
+            git add detailed/map-manifest.json
             git commit -m "Bake map-editor roads/zones into game (auto-sync)"
             git push
           fi
