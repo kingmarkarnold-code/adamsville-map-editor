@@ -267,6 +267,15 @@ class MapCanvas(Gtk.DrawingArea):
         # pulsing target highlight). None when not hovering.
         self.link_overpass_hover = None
 
+        # Move-road state (Joshua 2026-10-12): pick up an entire road
+        # and relocate it. None when idle; otherwise a dict:
+        #   {"cat": category, "road": road_dict,
+        #    "anchor": (wx, wz) mouse world pos at mode start,
+        #    "dx": float, "dz": float}  current drag offset (world units)
+        # The road's pts are NOT mutated until commit — on_draw renders
+        # a ghost preview at pts + (dx, dz) while the mode is active.
+        self.move_road = None
+
         # Enable mouse events
         self.set_events(
             Gdk.EventMask.BUTTON_PRESS_MASK |
@@ -396,6 +405,10 @@ class MapCanvas(Gtk.DrawingArea):
 
         # Draw Join/Merge/Extend tool overlays (picked roads, endpoints)
         self._draw_tool_overlays(cr)
+
+        # Draw the move-road ghost preview on top of everything else
+        # while move-road mode is active (Joshua 2026-10-12).
+        self._draw_move_ghost(cr)
 
         return False
 
@@ -1251,6 +1264,13 @@ class MapCanvas(Gtk.DrawingArea):
     def on_button_press(self, widget, event):
         """Handle mouse button press. Starts pan drag or tool action."""
         if event.button == 1:  # left click
+            # Move-road mode is modal (Joshua 2026-10-12): a left click
+            # drops the road at its current ghost position. Shift+click
+            # skips endpoint snapping on drop.
+            if self.move_road is not None:
+                snap = not (event.state & Gdk.ModifierType.SHIFT_MASK)
+                self.commit_move_road(snap=snap)
+                return True
             # Divide-section picking takes precedence over every tool:
             # clicks select road point indices for the new divided
             # section (Joshua 2026-10-11).
@@ -1317,6 +1337,12 @@ class MapCanvas(Gtk.DrawingArea):
                             self.app.on_zone_selected(ZONES[zi]["name"])
                         else:
                             self.app.on_zone_selected(None)
+                        # Google Maps feel (Joshua 2026-10-12): only pins
+                        # are draggable in zone mode, so a drag that
+                        # starts here pans the map.
+                        self.dragging = True
+                        self.drag_start = (event.x, event.y)
+                        self.cam_start = (self.cam_x, self.cam_y)
                         self.queue_draw()
                 return True
 
@@ -1325,7 +1351,14 @@ class MapCanvas(Gtk.DrawingArea):
             self.cam_start = (self.cam_x, self.cam_y)
 
             if self.active_tool == "select":
+                # Google Maps feel (Joshua 2026-10-12): a click on a
+                # road selects it WITHOUT panning; a drag that starts
+                # on empty terrain pans the map. Hit-test first so a
+                # road grab never nudges the camera.
+                hit = self._pick_road_at(event.x, event.y)
                 self._pick_road(event.x, event.y)
+                if hit is not None:
+                    self.dragging = False
 
         elif event.button == 3:  # right click — always pan
             self.dragging = True
@@ -1365,6 +1398,17 @@ class MapCanvas(Gtk.DrawingArea):
     def on_motion(self, widget, event):
         """Handle mouse move. Pan if dragging, or drag a zone pin."""
         self.mouse_pos = (event.x, event.y)
+
+        # Move-road mode is modal (Joshua 2026-10-12): the ghost
+        # preview follows the cursor 1:1 from the anchor point grabbed
+        # when the mode started. Nothing else happens on mouse move.
+        if self.move_road is not None:
+            wx, wz = self.screen_to_world(event.x, event.y)
+            ax, az = self.move_road["anchor"]
+            self.move_road["dx"] = wx - ax
+            self.move_road["dz"] = wz - az
+            self.queue_draw()
+            return True
 
         # Overpass link hover: track which overpass is under the cursor
         # so the target highlight follows the mouse (Joshua 2026-10-11).
@@ -1759,6 +1803,14 @@ class MapCanvas(Gtk.DrawingArea):
         self.divide_pick = None  # cancel any divide-section picking
         self.link_overpass_mode = False  # cancel overpass linking
         self.link_overpass_hover = None
+        # Cancel move-road mode too (Joshua 2026-10-12) — Escape must
+        # never leave a road stuck to the cursor.
+        if self.move_road is not None:
+            self.move_road = None
+            try:
+                self.app.set_status("Move Road cancelled.")
+            except Exception:
+                pass
         try:
             self.app._update_merge_join_buttons()
         except Exception:
@@ -2135,6 +2187,171 @@ class MapCanvas(Gtk.DrawingArea):
             self.app.set_status(f"Merged {name_s} \u2192 {name_t} ({action}).")
         else:
             self.app.set_status("Merge failed: could not save the change.")
+
+    # ------------------------------------------------------------------
+    # Move Road: pick up an entire road and relocate it, preserving its
+    # shape. (Joshua 2026-10-12: some streets have the right shape but
+    # are in the wrong location.)
+    #
+    # Workflow: select exactly one road, then Edit -> Move Road. The
+    # road sticks to the cursor (ghost preview follows the mouse).
+    # Click or press Enter to drop it, Escape to cancel. On drop, each
+    # endpoint within MERGE_SNAP_TOLERANCE of another road's edge snaps
+    # onto that edge (hold Shift while dropping to skip snapping).
+    # The move is one undo step ("Move Road").
+    # ------------------------------------------------------------------
+
+    def start_move_road(self):
+        """
+        Enter move-road mode for the single selected road.
+        Returns True if the mode started, False otherwise.
+        """
+        sel = self.selected_roads
+        if len(sel) != 1:
+            self.app.set_status(
+                "Move Road: select exactly one road first.")
+            return False
+        cat, flat_idx = sel[0]
+        road = self._get_road_dict(cat, flat_idx)
+        if road is None or len(road.get("pts", [])) < 2:
+            self.app.set_status("Move Road: the selected road is invalid.")
+            return False
+        # Anchor the drag at the current mouse position in world coords
+        # so the road follows the cursor 1:1 from the moment the mode
+        # starts (sticky-cursor style, no press-and-hold needed).
+        try:
+            awx, awz = self.screen_to_world(*self.mouse_pos)
+        except Exception:
+            awx, awz = road["pts"][0][0], road["pts"][0][1]
+        self.move_road = {"cat": cat, "road": road,
+                          "anchor": (awx, awz), "dx": 0.0, "dz": 0.0}
+        name = road.get("name") or "Unnamed"
+        self.app.set_status(
+            f"Move Road: '{name}' follows the cursor. Click or press "
+            f"Enter to drop it (Shift+click skips endpoint snapping), "
+            f"Escape to cancel.")
+        self.queue_draw()
+        return True
+
+    def cancel_move_road(self):
+        """Leave move-road mode without changing anything."""
+        if self.move_road is None:
+            return
+        self.move_road = None
+        self.app.set_status("Move Road cancelled.")
+        self.queue_draw()
+
+    def _move_road_snap_endpoints(self, cat, road):
+        """
+        After a move, snap any endpoint that landed within
+        MERGE_SNAP_TOLERANCE of another road's edge onto that edge
+        (same snap semantics as Merge). The road itself is excluded
+        from the search. Returns the number of endpoints snapped.
+        """
+        pts = road.get("pts", [])
+        if len(pts) < 2 or not self.app.spatial_index:
+            return 0
+        snapped = 0
+        for end_idx in (0, len(pts) - 1):
+            ex, ez = pts[end_idx]
+            best = None  # (dist, tx, tz)
+            for idx in self.app.spatial_index.query(
+                    ex - self.MERGE_SNAP_TOLERANCE,
+                    ez - self.MERGE_SNAP_TOLERANCE,
+                    ex + self.MERGE_SNAP_TOLERANCE,
+                    ez + self.MERGE_SNAP_TOLERANCE):
+                _c, other, _, _, _, _ = \
+                    self.app.spatial_index.roads[idx]
+                if other is road:
+                    continue  # never snap to ourselves
+                tx, tz, dist = self._closest_point_on_road(
+                    ex, ez, other.get("pts", []))
+                if dist <= self.MERGE_SNAP_TOLERANCE and (
+                        best is None or dist < best[0]):
+                    best = (dist, tx, tz)
+            if best is not None:
+                _dist, tx, tz = best
+                pts[end_idx] = [tx, tz]
+                snapped += 1
+        return snapped
+
+    def commit_move_road(self, snap=True):
+        """
+        Drop the road at its current ghost position. Applies the
+        accumulated (dx, dz) offset to every point, snaps endpoints to
+        nearby roads (unless snap=False), and records one undo step.
+        A zero-offset drop is a silent no-op (no history entry).
+        """
+        mv = self.move_road
+        self.move_road = None
+        if mv is None:
+            return
+        cat, road = mv["cat"], mv["road"]
+        dx, dz = mv["dx"], mv["dz"]
+        name = road.get("name") or "Unnamed"
+        if abs(dx) < 0.001 and abs(dz) < 0.001:
+            # Clicked without moving: nothing to do, no undo step.
+            self.app.set_status(f"Move Road: '{name}' not moved.")
+            self.queue_draw()
+            return
+        # Undo (Joshua 2026-10-12): snapshot BEFORE the pts shift so
+        # the whole move undoes as one step.
+        self.app.undo_begin("Move Road")
+        # Shift every point by the same offset — the road keeps its
+        # exact shape. Divided-section indices stay valid because the
+        # point count and order don't change; the cul-de-sac bulb is
+        # drawn from the dead-end point, so it rides along for free.
+        road["pts"] = [[p[0] + dx, p[1] + dz]
+                       for p in road.get("pts", [])]
+        snapped = 0
+        if snap:
+            snapped = self._move_road_snap_endpoints(cat, road)
+        # Re-check the turnaround bulb: the move may have connected or
+        # disconnected a dead end (Joshua 2026-10-11).
+        self.refresh_cul_de_sac(cat, road)
+        if self.app.apply_road_modify(cat, road):
+            msg = (f"Moved '{name}' by ({dx:.0f}, {dz:.0f}).")
+            if snapped:
+                msg += f" {snapped} endpoint(s) snapped to nearby roads."
+            self.app.set_status(msg)
+        else:
+            self.app.set_status("Move Road failed: could not save.")
+        # Commit the undo step (skipped automatically if the state
+        # somehow ended up unchanged).
+        self.app.undo_commit()
+        self.queue_draw()
+
+    def _draw_move_ghost(self, cr):
+        """
+        Draw the move-road ghost preview: the selected road's polyline
+        shifted by the current (dx, dz), in bright highlight color, on
+        top of everything else. Called from on_draw while move-road mode
+        is active.
+        """
+        mv = self.move_road
+        if mv is None:
+            return
+        pts = mv["road"].get("pts", [])
+        if len(pts) < 2:
+            return
+        dx, dz = mv["dx"], mv["dz"]
+        # Bright yellow-green, slightly transparent so the original
+        # road shows through underneath.
+        cr.set_source_rgba(0.7, 1.0, 0.2, 0.85)
+        cr.set_line_width(max(2.0, 6.0 * self.zoom))
+        cr.set_line_cap(1)   # round caps
+        cr.set_line_join(1)  # round joins
+        cr.set_dash([8.0, 4.0])  # dashed = "preview, not committed"
+        first = True
+        for px, pz in pts:
+            sx, sy = self.world_to_screen(px + dx, pz + dz)
+            if first:
+                cr.move_to(sx, sy)
+                first = False
+            else:
+                cr.line_to(sx, sy)
+        cr.stroke()
+        cr.set_dash([])
 
     # ------------------------------------------------------------------
     # Extend tool: click near a road -> closest endpoint auto-selected
